@@ -19,6 +19,8 @@ static Value arrayAppend(int argCount, Value* args);
 static Value arrayHead(int argCount, Value* args);
 static Value arrayTail(int argCount, Value* args);
 static Value arrayRest(int argCount, Value* args);
+static Value dictRemove(int argCount, Value* args);
+
 static Value lengthNative(int argCount, Value* args) {
   if (argCount != 1) {
     runtimeError("SKILL ISSUE: length() takes exactly 1 argument.");
@@ -135,6 +137,18 @@ static Value arrayRest(int argCount, Value* args) {
   return ARRAY_VAL(anewArray);
 }
 
+static Value dictRemove(int argCount, Value* args) {
+  if (argCount != 2 || !IS_DICT(args[0]) || !IS_STRING(args[1])) {
+    runtimeError("SKILL ISSUE: delete() takes exactly 2 arguments: dictionary and key.");
+    return NIL_VAL;
+  }
+
+  ObjDict* dict = AS_DICT(args[0]);
+  ObjString* key = AS_STRING(args[1]);
+  tableDelete(&dict->items, key);
+
+  return NIL_VAL;
+}
 
 static void resetStack() {
   vm.stackTop = vm.stack;
@@ -195,6 +209,7 @@ void initVM() {
   defineNative("head", arrayHead);
   defineNative("tail", arrayTail);
   defineNative("rest", arrayRest);
+  defineNative("remove", dictRemove);
   defineNative("length", lengthNative);
 }
 
@@ -499,37 +514,49 @@ static InterpretResult run() {
         break;
       }
       case OP_GET_PROPERTY: {
-        if (!IS_INSTANCE(peek(0))) {
-          runtimeError("SKILL ISSUE: Only instances have properties.");
-          return INTERPRET_RUNTIME_ERROR;
-        }
+        if (IS_INSTANCE(peek(0))) {
+          ObjInstance* instance = AS_INSTANCE(peek(0));
+          ObjString* name = READ_STRING();
 
-        ObjInstance* instance = AS_INSTANCE(peek(0));
-        ObjString* name = READ_STRING();
+          Value value;
+          if (tableGet(&instance->fields, name, &value)) {
+            pop(); // Instance.
+            push(value);
+            break;
+          }
 
-        Value value;
-        if (tableGet(&instance->fields, name, &value)) {
-          pop(); // Instance.
+          if (!bindMethod(instance->klass, name)) {
+            return INTERPRET_RUNTIME_ERROR;
+          }
+        } else if (IS_DICT(peek(0))) {
+          ObjDict* dict = AS_DICT(peek(0));
+          ObjString* name = READ_STRING();
+          Value value = readDict(dict, name);
+          pop(); // Dict.
           push(value);
-          break;
-        }
-
-        if (!bindMethod(instance->klass, name)) {
+        } else {
+          runtimeError("SKILL ISSUE: Only instances and dictionaries have properties.");
           return INTERPRET_RUNTIME_ERROR;
         }
         break;
       }
       case OP_SET_PROPERTY: {
-        if (!IS_INSTANCE(peek(1))) {
-          runtimeError("SKILL ISSUE: Only instances have fields.");
+        if (IS_INSTANCE(peek(1))) {
+          ObjInstance* instance = AS_INSTANCE(peek(1));
+          tableSet(&instance->fields, READ_STRING(), peek(0));
+          Value value = pop();
+          pop();
+          push(value);
+        } else if (IS_DICT(peek(1))) {
+          ObjDict* dict = AS_DICT(peek(1));
+          writeDict(dict, READ_STRING(), peek(0));
+          Value value = pop();
+          pop();
+          push(value);
+        } else {
+          runtimeError("SKILL ISSUE: Only instances and dictionaries have fields.");
           return INTERPRET_RUNTIME_ERROR;
         }
-        
-        ObjInstance* instance = AS_INSTANCE(peek(1));
-        tableSet(&instance->fields, READ_STRING(), peek(0));
-        Value value = pop();
-        pop();
-        push(value);
         break;
       }
       case OP_GET_SUPER: {
@@ -775,29 +802,75 @@ static InterpretResult run() {
         push(ARRAY_VAL(array));
         break;
       }
-      case OP_ARRAY_GET: {
-        if (!IS_ARRAY(peek(1)) || !IS_NUMBER(peek(0))) {
-          runtimeError("SKILL ISSUE: Array access requires an array and a number.");
+      case OP_OBJECT_GET: {
+        if (IS_ARRAY(peek(1))) {
+          if (!IS_NUMBER(peek(0))) {
+            runtimeError("SKILL ISSUE: Array access requires a number.");
+            return INTERPRET_RUNTIME_ERROR;
+          }
+          int index = AS_NUMBER(pop());
+          ObjArray* array = AS_ARRAY(pop());
+          push(readArray(array, index));
+        } else if (IS_DICT(peek(1))) {
+          if (!IS_STRING(peek(0))) {
+            runtimeError("SKILL ISSUE: Dictionary keys must be strings.");
+            return INTERPRET_RUNTIME_ERROR;
+          }
+          ObjString* key = AS_STRING(pop());
+          ObjDict* dict = AS_DICT(pop());
+          push(readDict(dict, key));
+        } else {
+          runtimeError("SKILL ISSUE: Only arrays and dictionaries support get set operations.");
           return INTERPRET_RUNTIME_ERROR;
         }
-        int index = AS_NUMBER(pop());
-        ObjArray* array = AS_ARRAY(pop());
-        push(readArray(array, index));
         break;
       }
-      case OP_ARRAY_SET: {
-        if (!IS_ARRAY(peek(2)) || !IS_NUMBER(peek(1))) {
-          runtimeError("SKILL ISSUE: Array access requires an array and a number.");
+      case OP_OBJECT_SET: {
+        if (IS_ARRAY(peek(2))) {
+          if (!IS_NUMBER(peek(1))) {
+            runtimeError("SKILL ISSUE: Array access requires a number.");
+            return INTERPRET_RUNTIME_ERROR;
+          }
+          Value value = peek(0);
+          int index = AS_NUMBER(peek(1));
+          ObjArray* array = AS_ARRAY(peek(2));
+          array->elements.values[index] = value;
+          pop();
+          pop();
+          pop();
+          push(NIL_VAL);
+        } else if (IS_DICT(peek(2))) {
+          if (!IS_STRING(peek(1))) {
+            runtimeError("SKILL ISSUE: Dictionary keys must be strings.");
+            return INTERPRET_RUNTIME_ERROR;
+          }
+          Value value = peek(0);
+          ObjString* key = AS_STRING(peek(1));
+          ObjDict* dict = AS_DICT(peek(2));
+          writeDict(dict, key, value);
+          pop();
+          pop();
+          pop();
+          push(NIL_VAL);
+        } else {
+          runtimeError("SKILL ISSUE: Only arrays and dictionaries support set operations.");
           return INTERPRET_RUNTIME_ERROR;
         }
-        Value value = peek(0);
-        int index = AS_NUMBER(peek(1));
-        ObjArray* array = AS_ARRAY(peek(2));
-        array->elements.values[index] = value;
-        pop();
-        pop();
-        pop();
-        push(NIL_VAL);
+        break;
+      }
+      case OP_DICT: {
+        ObjDict* dict = newDict();
+        int elementCount = READ_BYTE();
+        for (int i = 0; i < elementCount; i++) {
+          Value value = pop();
+          Value key = pop();
+          if (!IS_STRING(key)) {
+            runtimeError("SKILL ISSUE: Dictionary keys must be strings.");
+            return INTERPRET_RUNTIME_ERROR;
+          }
+          writeDict(dict, AS_STRING(key), value);
+        }
+        push(DICT_VAL(dict));
         break;
       }
     }

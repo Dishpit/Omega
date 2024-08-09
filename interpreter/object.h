@@ -36,6 +36,7 @@ typedef enum {
   OBJ_STRING,
   OBJ_UPVALUE,
   OBJ_ARRAY,
+  OBJ_DICT,
 } ObjType;
 
 struct Obj {
@@ -104,6 +105,12 @@ typedef struct {
   ValueArray elements;
 } ObjArray;
 
+typedef struct {
+  Obj obj;
+  Table items;
+} ObjDict;
+
+ObjDict* newDict();
 ObjArray* newArray();
 ObjBoundMethod* newBoundMethod(Value receiver, ObjClosure* method);
 ObjClass* newClass(ObjString* name);
@@ -118,6 +125,9 @@ void printObject(Value value);
 void writeArray(ObjArray* array, Value value);
 void printArray(ObjArray* array);
 Value readArray(ObjArray* array, int index);
+void writeDict(ObjDict* dict, ObjString* key, Value value);
+void printDict(ObjDict* dict);
+Value readDict(ObjDict* dict, ObjString* key);
 
 static inline bool isObjType(Value value, ObjType type) {
   return IS_OBJ(value) && AS_OBJ(value)->type == type;

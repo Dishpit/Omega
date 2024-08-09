@@ -151,6 +151,42 @@ void printArray(ObjArray* array) {
   printf("]");
 }
 
+ObjDict* newDict() {
+  ObjDict* dict = ALLOCATE_OBJ(ObjDict, OBJ_DICT);
+  initTable(&dict->items);
+  return dict;
+}
+
+void writeDict(ObjDict* dict, ObjString* key, Value value) {
+  tableSet(&dict->items, key, value);
+}
+
+Value readDict(ObjDict* dict, ObjString* key) {
+  Value value;
+  if (tableGet(&dict->items, key, &value)) {
+    return value;
+  }
+  return NIL_VAL;
+}
+
+void printDict(ObjDict* dict) {
+  printf("{");
+  int count = 0;
+  for (int i = 0; i < dict->items.capacity; i++) {
+    Entry* entry = &dict->items.entries[i];
+    if (entry->key != NULL) {
+      count++;
+      printValue(OBJ_VAL(entry->key));
+      printf(": ");
+      printValue(entry->value);
+      if (count < dict->items.count) {
+        printf(", ");
+      }
+    }
+  }
+  printf("}");
+}
+
 ObjUpvalue* newUpvalue(Value* slot) {
   ObjUpvalue* upvalue = ALLOCATE_OBJ(ObjUpvalue, OBJ_UPVALUE);
   upvalue->closed = NIL_VAL;
@@ -196,6 +232,9 @@ void printObject(Value value) {
       break;
     case OBJ_ARRAY:
       printArray(AS_ARRAY(value));
+      break;
+    case OBJ_DICT:
+      printDict(AS_DICT(value));
       break;
   }
 }

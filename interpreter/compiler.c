@@ -558,14 +558,28 @@ static void arrayLiteral(bool canAssign) {
   emitBytes(OP_ARRAY, elementCount);
 }
 
-static void arrayAccess(bool canAssign) {
+static void dictLiteral(bool canAssign) {
+  int elementCount = 0;
+  if (!check(TOKEN_RIGHT_BRACE)) {
+    do {
+      expression();
+      consume(TOKEN_COLON, "Expect ':' after key.");
+      expression();
+      elementCount++;
+    } while (match(TOKEN_COMMA));
+  }
+  consume(TOKEN_RIGHT_BRACE, "Expect '}' after dict elements.");
+  emitBytes(OP_DICT, elementCount);
+}
+
+static void objectAccess(bool canAssign) {
   expression();
   consume(TOKEN_RIGHT_BRACKET, "Expect ']' after index.");
   if (canAssign && match(TOKEN_EQUAL)) {
     expression();
-    emitByte(OP_ARRAY_SET);
+    emitByte(OP_OBJECT_SET);
   } else {
-    emitByte(OP_ARRAY_GET);
+    emitByte(OP_OBJECT_GET);
   }
 }
 
@@ -657,12 +671,13 @@ static void unary(bool canAssign) {
 ParseRule rules[] = {
   [TOKEN_LEFT_PAREN]    = {grouping,      call,         PREC_CALL},
   [TOKEN_RIGHT_PAREN]   = {NULL,          NULL,         PREC_NONE},
-  [TOKEN_LEFT_BRACE]    = {NULL,          NULL,         PREC_NONE}, 
+  [TOKEN_LEFT_BRACE]    = {dictLiteral,   NULL,         PREC_NONE}, 
   [TOKEN_RIGHT_BRACE]   = {NULL,          NULL,         PREC_NONE},
-  [TOKEN_LEFT_BRACKET]  = {arrayLiteral,  arrayAccess,  PREC_CALL}, 
+  [TOKEN_LEFT_BRACKET]  = {arrayLiteral,  objectAccess, PREC_CALL}, 
   [TOKEN_RIGHT_BRACKET] = {NULL,          NULL,         PREC_NONE},
   [TOKEN_COMMA]         = {NULL,          NULL,         PREC_NONE},
   [TOKEN_DOT]           = {NULL,          dot,          PREC_CALL},
+  [TOKEN_COLON]         = {NULL,          NULL,         PREC_NONE},
   [TOKEN_MINUS]         = {unary,         binary,       PREC_TERM},
   [TOKEN_PLUS]          = {NULL,          binary,       PREC_TERM},
   [TOKEN_MODULO]        = {NULL,          binary,       PREC_TERM},

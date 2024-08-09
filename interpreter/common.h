@@ -13,6 +13,7 @@ typedef enum {
   TYPE_STRING,
   TYPE_BOOL,
   TYPE_ARRAY,
+  TYPE_DICT,
 } FunctionReturnType;
 
 // DEV FLAGS
